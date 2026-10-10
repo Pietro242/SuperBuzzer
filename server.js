@@ -65,13 +65,88 @@ function saveState() {
 
 const state = loadState();
 
+// ─── Store immagini in-memory ────────────────────────────────
+// { [imageId]: Buffer }  — cancellate a ogni nuova slide
+const imageStore = new Map();
+
 // ─── Server HTTP + WebSocket ─────────────────────────────────
 const httpServer = createServer((req, res) => {
+  // CORS permissivo (LAN locale)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Image-Mime');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // ── GET /image/:id ─── serve l'immagine ────────────────────
+  const getMatch = req.url.match(/^\/image\/([a-zA-Z0-9_-]+)$/);
+  if (req.method === 'GET' && getMatch) {
+    const id = getMatch[1];
+    const entry = imageStore.get(id);
+    if (!entry) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': entry.mime,
+      'Content-Length': entry.buffer.length,
+      'Cache-Control': 'no-store',
+    });
+    res.end(entry.buffer);
+    return;
+  }
+
+  // ── POST /image ─── riceve un'immagine dall'host ────────────
+  if (req.method === 'POST' && req.url === '/image') {
+    const mime = req.headers['x-image-mime'] || 'image/jpeg';
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length > 20 * 1024 * 1024) { // max 20 MB
+        res.writeHead(413);
+        res.end('Image too large');
+        return;
+      }
+      const imageId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      imageStore.set(imageId, { buffer, mime });
+      // Limite: tieni al massimo le ultime 10 immagini in memoria
+      if (imageStore.size > 10) {
+        const oldest = imageStore.keys().next().value;
+        imageStore.delete(oldest);
+      }
+      console.log(`[🖼️] Immagine ricevuta: ${imageId} (${(buffer.length / 1024).toFixed(1)} KB)`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ imageId }));
+    });
+    req.on('error', () => {
+      res.writeHead(500);
+      res.end('Upload error');
+    });
+    return;
+  }
+
+  // Fallback
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('SuperBuzzer WS Server\n');
 });
 
 const wss = new WebSocketServer({ server: httpServer });
+
+// ─── Set dei WebSocket autenticati come host ─────────────────
+const hostClients = new Set();
+
+// Messaggi che richiedono autenticazione host
+const HOST_ONLY_TYPES = new Set([
+  'CORRECT', 'WRONG', 'SHOW_SLIDE', 'OPEN_BUZZER', 'REOPEN_BUZZER',
+  'HIDE_SLIDE', 'RESET_BUZZERS', 'UPDATE_SETTINGS', 'UPDATE_SCORE',
+  'RESET_SCORES', 'CLEAR_PLAYERS', 'REMOVE_PLAYER',
+]);
 
 function broadcast(data) {
   const msg = JSON.stringify(data);
@@ -95,6 +170,28 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (rawData) => {
     try {
       const msg = JSON.parse(rawData.toString());
+
+      // ─── Autenticazione host ─────────────────────────────
+      if (msg.type === 'AUTH_HOST') {
+        const pin = msg.pin ?? '';
+        if (pin === state.game.settings.hostPin) {
+          hostClients.add(ws);
+          ws.send(JSON.stringify({ type: 'AUTH_OK' }));
+          console.log(`[🔑] Host autenticato da ${ip}`);
+        } else {
+          ws.send(JSON.stringify({ type: 'AUTH_FAIL', reason: 'PIN errato' }));
+          console.warn(`[🚫] Tentativo host con PIN errato da ${ip}`);
+        }
+        return;
+      }
+
+      // ─── Blocca messaggi privilegiati da non-host ────────
+      if (HOST_ONLY_TYPES.has(msg.type) && !hostClients.has(ws)) {
+        console.warn(`[🚫] Messaggio '${msg.type}' rifiutato: client non autenticato (${ip})`);
+        ws.send(JSON.stringify({ type: 'ERROR', reason: 'Non autorizzato' }));
+        return;
+      }
+
       handleMessage(msg);
     } catch (e) {
       console.error('Messaggio non valido:', e.message);
@@ -102,6 +199,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    hostClients.delete(ws);
     console.log(`[-] Client disconnesso (tot: ${wss.clients.size})`);
   });
 });
@@ -280,7 +378,13 @@ function handleMessage(msg) {
     }
 
     case 'UPDATE_SETTINGS': {
-      state.game.settings = { ...state.game.settings, ...msg.settings };
+      // Filtra i campi ammessi per evitare sovrascritture indesiderate
+      const ALLOWED_SETTINGS = ['hostPin', 'points1st', 'points2nd', 'points3rd', 'penalty'];
+      const safeSettings = {};
+      for (const key of ALLOWED_SETTINGS) {
+        if (key in msg.settings) safeSettings[key] = msg.settings[key];
+      }
+      state.game.settings = { ...state.game.settings, ...safeSettings };
       saveState();
       broadcastState();
       break;
@@ -288,7 +392,8 @@ function handleMessage(msg) {
 
     case 'UPDATE_SCORE': {
       const { playerId, delta } = msg;
-      if (state.players[playerId]) {
+      // Valida che delta sia un numero finito (no NaN, no Infinity, no stringa)
+      if (state.players[playerId] && typeof delta === 'number' && isFinite(delta)) {
         state.players[playerId].score = (state.players[playerId].score || 0) + delta;
       }
       saveState();

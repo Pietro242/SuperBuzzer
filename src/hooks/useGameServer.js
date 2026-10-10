@@ -12,6 +12,7 @@ export function useGameServer() {
   const [connected, setConnected] = useState(false);
   const [gameState, setGameState] = useState(null);
   const [players, setPlayers] = useState({});
+  const [lastMessage, setLastMessage] = useState(null);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const mountedRef = useRef(true);
@@ -37,6 +38,9 @@ export function useGameServer() {
           if (msg.type === 'STATE') {
             setGameState(msg.game ?? null);
             setPlayers(msg.players ?? {});
+          } else {
+            // Propaga AUTH_OK, AUTH_FAIL, ERROR ecc. a chi ascolta
+            setLastMessage(msg);
           }
         } catch (e) {
           console.error('[WS] Parse error:', e);
@@ -81,5 +85,5 @@ export function useGameServer() {
     .map(([id, data]) => ({ id, ...data }))
     .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-  return { connected, gameState, players, sortedPlayers, send };
+  return { connected, gameState, players, sortedPlayers, send, lastMessage };
 }

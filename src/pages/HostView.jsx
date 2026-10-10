@@ -1,32 +1,36 @@
 // HostView.jsx – Dashboard Host (/host) con Slide + Media + Manche
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useGameServer } from '../hooks/useGameServer';
 import AudioPlayer from '../components/AudioPlayer';
 import ScoreSettings from '../components/ScoreSettings';
 import Scoreboard from '../components/Scoreboard';
 import MancheEditor from '../components/MancheEditor';
+import { uploadImageFile, uploadImageBase64, getImageUrl } from '../utils/imageUpload';
 
 const ORDER_EMOJI = ['🥇', '🥈', '🥉'];
 const ORDER_COLOR = ['text-yellow-400', 'text-gray-300', 'text-orange-400'];
 const ORDER_LABEL = ['1°', '2°', '3°'];
 
-// Converte un File immagine in base64
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function HostView() {
-  const { connected, gameState, sortedPlayers, send } = useGameServer();
+  const { connected, gameState, sortedPlayers, send, lastMessage } = useGameServer();
 
   // Auth
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [isAuth, setIsAuth] = useState(false);
+
+  // Reagisce alle risposte AUTH_OK / AUTH_FAIL dal server
+  useEffect(() => {
+    if (!lastMessage) return;
+    if (lastMessage.type === 'AUTH_OK') {
+      setIsAuth(true);
+      setPinError('');
+    } else if (lastMessage.type === 'AUTH_FAIL') {
+      setPinError('PIN errato!');
+      setPinInput('');
+    }
+  }, [lastMessage]);
 
   // Tab
   const [activeTab, setActiveTab] = useState('game');
@@ -35,8 +39,8 @@ export default function HostView() {
   const [slideTitle, setSlideTitle] = useState('');
   const [slideMediaType, setSlideMediaType] = useState('audio'); // 'audio'|'image'|'text'
   const [slideText, setSlideText] = useState('');
-  const [slideImageData, setSlideImageData] = useState(null); // base64
-  const [slideImagePreview, setSlideImagePreview] = useState(null);
+  const [slideImageFile, setSlideImageFile] = useState(null);  // File originale
+  const [slideImagePreview, setSlideImagePreview] = useState(null); // solo per preview host
   const [slideIsDoublePoints, setSlideIsDoublePoints] = useState(false);
 
   // Audio player
@@ -86,28 +90,34 @@ export default function HostView() {
 
   // ─── PIN ─────────────────────────────────────────────────
   const handlePin = () => {
-    if (pinInput === (gameState?.settings?.hostPin ?? '1234')) {
-      setIsAuth(true); setPinError('');
-    } else {
-      setPinError('PIN errato!'); setPinInput('');
-    }
+    if (!pinInput.trim()) { setPinError('Inserisci il PIN!'); return; }
+    // Manda il PIN al server – l'autenticazione avviene lato server
+    send({ type: 'AUTH_HOST', pin: pinInput.trim() });
   };
 
   // ─── Slide ───────────────────────────────────────────────
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const b64 = await fileToBase64(file);
-    setSlideImageData(b64);
-    setSlideImagePreview(b64);
+    // Tieni il File per l'upload HTTP; genera preview locale
+    setSlideImageFile(file);
+    setSlideImagePreview(URL.createObjectURL(file));
   };
 
-  const handleShowSlide = () => {
+  const handleShowSlide = async () => {
+    let imageId = null;
+    if (slideMediaType === 'image' && slideImageFile) {
+      try {
+        imageId = await uploadImageFile(slideImageFile);
+      } catch (err) {
+        console.error('[IMG] Upload fallito:', err);
+      }
+    }
     const slide = {
       title: slideTitle.trim(),
       mediaType: slideMediaType,
       text: slideMediaType === 'text' ? slideText : null,
-      imageData: slideMediaType === 'image' ? slideImageData : null,
+      imageId: slideMediaType === 'image' ? imageId : null,
       isDoublePoints: slideIsDoublePoints,
     };
     send({ type: 'SHOW_SLIDE', slide });
@@ -127,18 +137,35 @@ export default function HostView() {
     handleHideSlide();
   };
 
-  const launchMancheSlide = (idx) => {
+  const launchMancheSlide = async (idx) => {
     if (!loadedManche) return;
     const s = loadedManche.slides[idx];
     if (!s) return;
     // Stop previous audio
     if (mancheAudioRef.current) { mancheAudioRef.current.pause(); mancheAudioRef.current = null; }
     setMancheSlideIdx(idx);
+
+    // Se la slide ha un'immagine, caricala sul server HTTP e usa solo l'ID
+    let imageId = null;
+    if (s.mediaType === 'image' && s.imageData) {
+      // imageData può essere già un imageId (se pre-caricata) o una data URL
+      if (s.imageData.startsWith('data:')) {
+        try {
+          imageId = await uploadImageBase64(s.imageData);
+        } catch (err) {
+          console.error('[IMG] Upload manche fallito:', err);
+        }
+      } else {
+        // È già un imageId
+        imageId = s.imageData;
+      }
+    }
+
     const slide = {
       title: s.title || '',
       mediaType: s.mediaType || 'audio',
       text: s.mediaType === 'text' ? s.text : null,
-      imageData: s.mediaType === 'image' ? s.imageData : null,
+      imageId: s.mediaType === 'image' ? imageId : null,
       isDoublePoints: s.isDoublePoints || false,
     };
     send({ type: 'SHOW_SLIDE', slide });
@@ -379,8 +406,14 @@ export default function HostView() {
                     <p className="text-yellow-300/90 text-sm font-semibold">{mancheSlide.hostNote}</p>
                   </div>
                 )}
-                {gameState?.currentSlide?.mediaType === 'image' && gameState?.currentSlide?.imageData && (
-                  <img src={gameState.currentSlide.imageData} className="w-full max-h-40 object-contain rounded-xl mb-3 opacity-70" alt="slide" />
+                {gameState?.currentSlide?.mediaType === 'image' && (gameState?.currentSlide?.imageId || gameState?.currentSlide?.imageData) && (
+                  <img
+                    src={gameState.currentSlide.imageId
+                      ? getImageUrl(gameState.currentSlide.imageId)
+                      : gameState.currentSlide.imageData}
+                    className="w-full max-h-40 object-contain rounded-xl mb-3 opacity-70"
+                    alt="slide"
+                  />
                 )}
                 {gameState?.currentSlide?.mediaType === 'text' && gameState?.currentSlide?.text && (
                   <p className="text-white/60 text-sm mb-3 italic">"{gameState.currentSlide.text}"</p>
@@ -637,7 +670,7 @@ export default function HostView() {
                   <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                 </label>
                 {slideImagePreview && (
-                  <button onClick={() => { setSlideImageData(null); setSlideImagePreview(null); }}
+                  <button onClick={() => { setSlideImageFile(null); URL.revokeObjectURL(slideImagePreview); setSlideImagePreview(null); }}
                     className="mt-3 w-full text-red-400/60 hover:text-red-400 text-sm transition-colors">
                     ✕ Rimuovi immagine
                   </button>
