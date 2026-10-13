@@ -1,0 +1,16 @@
+{
+    "rewrites": [
+        {
+            "source": "/host",
+            "destination": "/index.html"
+        },
+        {
+            "source": "/schermo",
+            "destination": "/index.html"
+        },
+        {
+            "source": "/giocatore",
+            "destination": "/index.html"
+        }
+    ]
+}
