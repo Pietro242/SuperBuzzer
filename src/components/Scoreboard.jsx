@@ -8,7 +8,7 @@ const MEDAL_COLORS = [
   'from-orange-400/20 to-orange-700/10 border-orange-500/30',
 ];
 
-export default function Scoreboard({ players, compact = false }) {
+export default function Scoreboard({ players = [], compact = false }) {
   const prevPlayersRef = useRef({});
   const [flashIds, setFlashIds] = useState(new Set());
 
@@ -19,16 +19,19 @@ export default function Scoreboard({ players, compact = false }) {
       const prev = prevPlayersRef.current[p.id];
       if (prev && prev.score !== p.score) changed.add(p.id);
     });
-    if (changed.size > 0) {
-      setFlashIds(changed);
-      setTimeout(() => setFlashIds(new Set()), 700);
-    }
+
     const map = {};
     players.forEach((p) => { map[p.id] = p; });
     prevPlayersRef.current = map;
+
+    if (changed.size > 0) {
+      setFlashIds(changed);
+      const timer = setTimeout(() => setFlashIds(new Set()), 700);
+      return () => clearTimeout(timer);
+    }
   }, [players]);
 
-  if (players.length === 0) {
+  if (!players || players.length === 0) {
     return (
       <div className="text-center text-white/30 py-8 text-lg font-body">
         Nessun giocatore ancora...
@@ -62,20 +65,28 @@ export default function Scoreboard({ players, compact = false }) {
             </p>
           </div>
 
-          {/* Punteggio */}
-          <div className={`font-display font-black shrink-0 ${compact ? 'text-2xl' : 'text-3xl'}`}
-            style={{
-              background: index === 0
-                ? 'linear-gradient(135deg, #facc15, #f59e0b)'
-                : index === 1
-                ? 'linear-gradient(135deg, #d1d5db, #9ca3af)'
-                : index === 2
-                ? 'linear-gradient(135deg, #fb923c, #c2410c)'
-                : 'white',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}>
+          {/* Punteggio con colore solido e visibilità garantita */}
+          <div
+            className={`font-display font-black shrink-0 ${compact ? 'text-2xl' : 'text-3xl'}`}
+            style={
+              index < 3
+                ? {
+                    background:
+                      index === 0
+                        ? 'linear-gradient(135deg, #facc15, #f59e0b)'
+                        : index === 1
+                        ? 'linear-gradient(135deg, #e5e7eb, #9ca3af)'
+                        : 'linear-gradient(135deg, #fb923c, #c2410c)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    color: index === 0 ? '#facc15' : index === 1 ? '#d1d5db' : '#fb923c',
+                  }
+                : {
+                    color: '#ffffff',
+                  }
+            }
+          >
             {player.score ?? 0}
           </div>
         </div>

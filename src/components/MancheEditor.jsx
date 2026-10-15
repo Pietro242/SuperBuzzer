@@ -37,15 +37,21 @@ export default function MancheEditor({ onLoadManche }) {
   const [editing, setEditing] = useState(null); // manche object in edit
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
-  const audioRefs = useRef({});
-
   // ─── Load all manche ────────────────────────────────
   const refresh = useCallback(async () => {
     const list = await getAllManche();
     setMancheList(list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    let mounted = true;
+    getAllManche().then((list) => {
+      if (mounted) {
+        setMancheList(list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
 
   // ─── Crea nuova manche ──────────────────────────────
   const handleNew = async () => {

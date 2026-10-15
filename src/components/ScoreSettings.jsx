@@ -1,6 +1,35 @@
 // ScoreSettings.jsx – Pannello impostazioni punti per l'Host
 import { useState, useEffect } from 'react';
 
+function PointInput({ id, label, emoji, color, value, onChange }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-2xl w-8 text-center shrink-0">{emoji}</span>
+      <label htmlFor={id} className="text-white/60 text-sm font-body flex-1 min-w-0">{label}</label>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(0, Number(value) - 1))}
+          className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold transition-colors"
+        >−</button>
+        <input
+          id={id}
+          type="number"
+          min={0}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-14 text-center font-display font-black text-xl bg-transparent border-b-2 ${color} text-white focus:outline-none pb-1`}
+        />
+        <button
+          type="button"
+          onClick={() => onChange(Number(value) + 1)}
+          className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold transition-colors"
+        >+</button>
+      </div>
+    </div>
+  );
+}
+
 export default function ScoreSettings({ settings, onSave }) {
   const [form, setForm] = useState({
     points1st: settings?.points1st ?? 3,
@@ -12,13 +41,15 @@ export default function ScoreSettings({ settings, onSave }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setForm({
-      points1st: settings?.points1st ?? 3,
-      points2nd: settings?.points2nd ?? 2,
-      points3rd: settings?.points3rd ?? 1,
-      penalty: settings?.penalty ?? 1,
-      hostPin: settings?.hostPin ?? '1234',
-    });
+    if (settings) {
+      setForm({
+        points1st: settings.points1st ?? 3,
+        points2nd: settings.points2nd ?? 2,
+        points3rd: settings.points3rd ?? 1,
+        penalty: settings.penalty ?? 1,
+        hostPin: settings.hostPin ?? '1234',
+      });
+    }
   }, [settings]);
 
   const handleChange = (key, val) => {
@@ -37,31 +68,6 @@ export default function ScoreSettings({ settings, onSave }) {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
-
-  const PointInput = ({ id, label, emoji, color, value, onChange }) => (
-    <div className="flex items-center gap-3">
-      <span className="text-2xl w-8 text-center shrink-0">{emoji}</span>
-      <label htmlFor={id} className="text-white/60 text-sm font-body flex-1 min-w-0">{label}</label>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={() => onChange(Math.max(0, Number(value) - 1))}
-          className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold transition-colors"
-        >−</button>
-        <input
-          id={id}
-          type="number"
-          min={0}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`w-14 text-center font-display font-black text-xl bg-transparent border-b-2 ${color} text-white focus:outline-none pb-1`}
-        />
-        <button
-          onClick={() => onChange(Number(value) + 1)}
-          className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold transition-colors"
-        >+</button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="glass p-5 flex flex-col gap-5">

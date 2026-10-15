@@ -1,5 +1,5 @@
 // HostView.jsx – Dashboard Host (/host) con Slide + Media + Manche
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useGameServer } from '../hooks/useGameServer';
 import AudioPlayer from '../components/AudioPlayer';
 import ScoreSettings from '../components/ScoreSettings';
@@ -9,28 +9,25 @@ import { uploadImageFile, uploadImageBase64, getImageUrl } from '../utils/imageU
 
 const ORDER_EMOJI = ['🥇', '🥈', '🥉'];
 const ORDER_COLOR = ['text-yellow-400', 'text-gray-300', 'text-orange-400'];
-const ORDER_LABEL = ['1°', '2°', '3°'];
-
 
 export default function HostView() {
-  const { connected, gameState, sortedPlayers, send, lastMessage } = useGameServer();
+  const {
+    connected,
+    gameState,
+    sortedPlayers,
+    send,
+    isHost,
+    authError,
+    authHost,
+    hostLogout,
+  } = useGameServer();
 
   // Auth
   const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState('');
-  const [isAuth, setIsAuth] = useState(false);
+  const [localPinError, setLocalPinError] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  // Reagisce alle risposte AUTH_OK / AUTH_FAIL dal server
-  useEffect(() => {
-    if (!lastMessage) return;
-    if (lastMessage.type === 'AUTH_OK') {
-      setIsAuth(true);
-      setPinError('');
-    } else if (lastMessage.type === 'AUTH_FAIL') {
-      setPinError('PIN errato!');
-      setPinInput('');
-    }
-  }, [lastMessage]);
+  const pinError = localPinError || authError;
 
   // Tab
   const [activeTab, setActiveTab] = useState('game');
@@ -79,20 +76,20 @@ export default function HostView() {
   // Auto-pausa audio quando buzzer scatta
   const prevPhaseRef = useRef('idle');
   const phase = gameState?.phase ?? 'idle';
-  if (phase === 'buzzed' && prevPhaseRef.current !== 'buzzed') {
-    setShouldPauseAudio(true);
-    if (mancheAudioRef.current) mancheAudioRef.current.pause();
-  }
-  if (phase !== 'buzzed' && prevPhaseRef.current === 'buzzed') {
-    // nessuna azione speciale
-  }
-  prevPhaseRef.current = phase;
+
+  useEffect(() => {
+    if (phase === 'buzzed' && prevPhaseRef.current !== 'buzzed') {
+      setShouldPauseAudio(true);
+      if (mancheAudioRef.current) mancheAudioRef.current.pause();
+    }
+    prevPhaseRef.current = phase;
+  }, [phase]);
 
   // ─── PIN ─────────────────────────────────────────────────
   const handlePin = () => {
-    if (!pinInput.trim()) { setPinError('Inserisci il PIN!'); return; }
-    // Manda il PIN al server – l'autenticazione avviene lato server
-    send({ type: 'AUTH_HOST', pin: pinInput.trim() });
+    if (!pinInput.trim()) { setLocalPinError('Inserisci il PIN!'); return; }
+    setLocalPinError('');
+    authHost(pinInput.trim());
   };
 
   // ─── Slide ───────────────────────────────────────────────
@@ -206,10 +203,6 @@ export default function HostView() {
     }
   };
   const handleWrong = () => send({ type: 'WRONG' });
-  const handleResetBuzzers = () => {
-    send({ type: 'RESET_BUZZERS' });
-    setShouldPauseAudio(false);
-  };
   const handleReopenBuzzer = () => {
     send({ type: 'REOPEN_BUZZER' });
     setShouldPauseAudio(false);
@@ -235,7 +228,7 @@ export default function HostView() {
   }
 
   // ─── PIN Gate ────────────────────────────────────────────
-  if (!isAuth) {
+  if (!isHost) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex flex-col items-center justify-center p-6 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
@@ -251,7 +244,7 @@ export default function HostView() {
           <div className="glass p-8 flex flex-col gap-5">
             <input
               id="host-pin-gate-input" type="password" value={pinInput}
-              onChange={(e) => { setPinInput(e.target.value); setPinError(''); }}
+              onChange={(e) => { setPinInput(e.target.value); setLocalPinError(''); }}
               onKeyDown={(e) => e.key === 'Enter' && handlePin()}
               placeholder="• • • •"
               className="input-base text-center text-3xl tracking-[0.8em] font-display font-bold"
@@ -280,10 +273,30 @@ export default function HostView() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Link giocatori con copia rapida */}
+          <button
+            onClick={() => {
+              const url = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+                ? `${window.location.origin}/giocatore`
+                : 'https://gioco.elettronicaimpianti.it/giocatore';
+              navigator.clipboard?.writeText(url);
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+            className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 rounded-full border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
+            title="Copia link per i partecipanti"
+          >
+            <span>📱</span>
+            <span>gioco.elettronicaimpianti.it</span>
+            <span className="text-[10px] bg-purple-500/30 px-1.5 py-0.5 rounded text-white font-mono">
+              {copiedLink ? '✓ Copiato!' : 'Copia'}
+            </span>
+          </button>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-white/60 text-sm">{sortedPlayers.length} giocatori</span>
           </div>
+
           {/* Fase corrente */}
           <div className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
             phase === 'buzzed' ? 'bg-red-500/20 border-red-500/40 text-red-400' :
@@ -293,7 +306,7 @@ export default function HostView() {
           }`}>
             {phase === 'idle' ? '⏸ Idle' : phase === 'slide' ? '🎬 Slide' : phase === 'buzzer' ? '🔓 Buzzer Aperto' : '🚨 Buzzed!'}
           </div>
-          <button id="host-logout-btn" onClick={() => setIsAuth(false)}
+          <button id="host-logout-btn" onClick={hostLogout}
             className="text-white/30 hover:text-red-400 text-sm transition-colors px-2">Esci</button>
         </div>
       </header>
@@ -506,7 +519,7 @@ export default function HostView() {
                 </div>
 
                 {/* Controlli audio manche */}
-                {mancheSlide?.audioBlob && mancheAudioRef.current && (
+                {mancheSlide?.audioBlob && (
                   <div className="mt-3 p-4 bg-black/20 rounded-xl border border-white/10">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-white/50 text-sm font-semibold">Tempo Trascorso:</span>
@@ -698,7 +711,7 @@ export default function HostView() {
               <button
                 id="host-show-slide-btn"
                 onClick={handleShowSlide}
-                disabled={!slideTitle && slideMediaType === 'image' && !slideImageData}
+                disabled={!slideTitle && slideMediaType === 'image' && !slideImageFile}
                 className="btn-primary flex-1 py-4 font-display font-bold text-lg"
               >
                 🎬 MOSTRA SLIDE

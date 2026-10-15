@@ -1,11 +1,12 @@
 // imageUpload.js – Carica immagini sul server HTTP (evita WS per dati binari grossi)
 
-const HTTP_PORT = 3001;
-
 function getServerBase() {
-  const host = window.location.hostname;
-  return `http://${host}:${HTTP_PORT}`;
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  return window.location.origin;
 }
+
 
 /**
  * Carica un File/Blob immagine sul server e restituisce l'imageId.
@@ -13,9 +14,14 @@ function getServerBase() {
  * @returns {Promise<string>} imageId
  */
 export async function uploadImageFile(file) {
+  const headers = { 'X-Image-Mime': file.type || 'image/jpeg' };
+  const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('superbuzzer_host_token') : null;
+  if (token) {
+    headers['X-Host-Token'] = token;
+  }
   const res = await fetch(`${getServerBase()}/image`, {
     method: 'POST',
-    headers: { 'X-Image-Mime': file.type || 'image/jpeg' },
+    headers,
     body: file,
   });
   if (!res.ok) throw new Error(`Upload fallito: ${res.status}`);

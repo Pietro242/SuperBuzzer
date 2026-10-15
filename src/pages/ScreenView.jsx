@@ -8,17 +8,28 @@ const MEDAL_STYLES = [
   { border: 'border-orange-400/50', bg: 'from-orange-400/15 to-orange-700/5', text: 'text-orange-300', emoji: '🥉' },
 ];
 
+const PARTICLES = Array.from({ length: 25 }, (_, i) => ({
+  id: i,
+  width: `${((i * 7) % 5) + 3}px`,
+  height: `${((i * 7) % 5) + 3}px`,
+  left: `${(i * 17) % 100}%`,
+  top: `${(i * 23) % 100}%`,
+  background: `hsl(${((i * 19) % 60) + 10}, 90%, 60%)`,
+  duration: `${4 + (i % 4)}s`,
+  delay: `${(i % 5) * 0.7}s`,
+}));
+
 function FloatingParticles() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {Array.from({ length: 25 }, (_, i) => (
-        <div key={i} className="absolute rounded-full opacity-20"
+      {PARTICLES.map((p) => (
+        <div key={p.id} className="absolute rounded-full opacity-20"
           style={{
-            width: `${Math.random() * 5 + 2}px`, height: `${Math.random() * 5 + 2}px`,
-            left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`,
-            background: `hsl(${Math.random() * 60 + 10}, 90%, 60%)`,
-            animation: `float ${3 + Math.random() * 5}s ease-in-out infinite`,
-            animationDelay: `${Math.random() * 5}s`,
+            width: p.width, height: p.height,
+            left: p.left, top: p.top,
+            background: p.background,
+            animation: `float ${p.duration} ease-in-out infinite`,
+            animationDelay: p.delay,
           }}
         />
       ))}
@@ -37,6 +48,13 @@ export default function ScreenView() {
 
   const showBuzzOverlay = phase === 'buzzed' && isBuzzed && buzzedBy;
   const showSlide = phase === 'slide' || phase === 'buzzer' || phase === 'buzzed';
+
+  const joinUrl = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? `${window.location.origin}/giocatore`
+    : 'https://gioco.elettronicaimpianti.it/giocatore';
+  const displayDomain = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? window.location.host
+    : 'gioco.elettronicaimpianti.it';
 
   if (!connected) {
     return (
@@ -212,20 +230,45 @@ export default function ScreenView() {
               <p className="text-white/30 text-sm uppercase tracking-widest mt-1">Quiz Musicale</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-white/40 text-sm uppercase tracking-wider">{sortedPlayers.length} giocatori</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2.5 px-4 py-2 rounded-full border border-purple-500/30 bg-purple-500/10 backdrop-blur-md">
+              <span className="text-lg">📱</span>
+              <span className="text-xs uppercase tracking-wider text-purple-300/80 font-bold">Entra su:</span>
+              <span className="font-display font-bold text-white tracking-wider text-base">{displayDomain}</span>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2 rounded-full border border-white/10 bg-white/5">
+              <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-white/60 text-sm uppercase tracking-wider">{sortedPlayers.length} giocatori</span>
+            </div>
           </div>
         </header>
 
         {/* flex-1 min-h-0 overflow-y-auto: la lista scrolla se ci sono tanti giocatori */}
         <main className="flex-1 min-h-0 flex flex-col justify-start px-12 py-4 overflow-y-auto">
           {sortedPlayers.length === 0 ? (
-            <div className="text-center">
-              <div className="text-8xl mb-8 animate-float">🎤</div>
-              <p className="font-display font-black text-4xl text-white/20 uppercase tracking-widest">
-                IN ATTESA DI GIOCATORI...
-              </p>
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-4 my-auto">
+              <div className="glass px-10 py-8 rounded-3xl border border-white/15 max-w-lg w-full flex flex-col items-center shadow-2xl backdrop-blur-xl animate-fade-in">
+                <div className="text-6xl mb-3 animate-float">📱</div>
+                <h2 className="font-display font-black text-3xl text-white tracking-wider uppercase mb-1">
+                  ENTRA IN PARTITA!
+                </h2>
+                <p className="text-white/60 text-sm mb-5">
+                  Inquadra il QR Code con lo smartphone o collegati a:
+                </p>
+                <div className="p-3 bg-white rounded-2xl shadow-[0_0_30px_rgba(255,255,255,0.2)] mb-5 hover:scale-105 transition-transform duration-300">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(joinUrl)}&margin=4`}
+                    alt="QR Code per entrare"
+                    className="w-48 h-48 rounded-lg"
+                  />
+                </div>
+                <div className="px-6 py-2 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-display font-bold text-xl tracking-wider">
+                  {displayDomain}
+                </div>
+                <p className="text-white/30 text-xs mt-4 uppercase tracking-widest animate-pulse">
+                  In attesa che i concorrenti si colleghino...
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-3 max-w-3xl mx-auto w-full">
@@ -254,12 +297,22 @@ export default function ScreenView() {
                     <div className={`font-display font-black shrink-0 ${style.text}`}
                       style={{
                         fontSize: 'clamp(2.5rem, 5vw, 5rem)',
-                        ...(index < 3 && {
-                          background: index === 0 ? 'linear-gradient(135deg, #facc15, #f59e0b)' :
-                            index === 1 ? 'linear-gradient(135deg, #f0f0f0, #9ca3af)' :
-                            'linear-gradient(135deg, #fb923c, #c2410c)',
-                          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-                        }),
+                        ...(index < 3
+                          ? {
+                              background:
+                                index === 0
+                                  ? 'linear-gradient(135deg, #facc15, #f59e0b)'
+                                  : index === 1
+                                  ? 'linear-gradient(135deg, #f0f0f0, #9ca3af)'
+                                  : 'linear-gradient(135deg, #fb923c, #c2410c)',
+                              WebkitBackgroundClip: 'text',
+                              WebkitTextFillColor: 'transparent',
+                              backgroundClip: 'text',
+                              color: index === 0 ? '#facc15' : index === 1 ? '#f0f0f0' : '#fb923c',
+                            }
+                          : {
+                              color: 'rgba(255, 255, 255, 0.7)',
+                            }),
                       }}>
                       {player.score ?? 0}
                     </div>

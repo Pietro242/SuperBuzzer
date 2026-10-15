@@ -11,21 +11,17 @@ function generateId() {
 
 export default function PlayerView() {
   const { connected, gameState, sortedPlayers, send } = useGameServer();
-  const [player, setPlayer] = useState(null);
+  const [player, setPlayer] = useState(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
   const [nameInput, setNameInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [showScoreboard, setShowScoreboard] = useState(false);
-
-  // Ripristina sessione
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const p = JSON.parse(stored);
-        setPlayer(p);
-      } catch (_) {}
-    }
-  }, []);
 
   // Re-join quando connesso (per riconnessioni)
   useEffect(() => {
